@@ -12,9 +12,6 @@ on:
       - ".github/workflows/ios.yml"
   workflow_dispatch:
 
-env:
-  WEBRTC_VERSION: "138.0.0"
-
 jobs:
   build-ios:
     runs-on: macos-14
@@ -31,30 +28,45 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # WebRTC.xcframework (stasel) : requis par le cinterop `webrtc` et le lien de l'app.
+      # WebRTC.xcframework (stasel) : récupère l'asset de la dernière release via l'API GitHub
+      # (robuste au nommage exact du zip), puis extrait dans iosApp/Vendor/.
       - name: Fetch WebRTC.xcframework
         run: |
+          set -euo pipefail
+          ASSET_URL=$(curl -fsSL https://api.github.com/repos/stasel/WebRTC/releases/latest \
+            | grep browser_download_url | grep -i 'xcframework.zip' | head -1 | cut -d '"' -f4)
+          echo "WebRTC asset: $ASSET_URL"
+          curl -fL -o webrtc.zip "$ASSET_URL"
           mkdir -p iosApp/Vendor
-          curl -L -o webrtc.zip \
-            "https://github.com/stasel/WebRTC/releases/download/${WEBRTC_VERSION}/WebRTC-M138.xcframework.zip" || \
-          curl -L -o webrtc.zip \
-            "https://github.com/stasel/WebRTC/releases/latest/download/WebRTC.xcframework.zip"
           unzip -q webrtc.zip -d iosApp/Vendor
-          ls -R iosApp/Vendor | head -40
+          echo "=== Arborescence Vendor ==="
+          find iosApp/Vendor -maxdepth 3 -type d
+
+      # Localise les slices device/simulateur dynamiquement (les noms de dossiers varient).
+      - name: Locate WebRTC slices
+        id: webrtc
+        run: |
+          set -euo pipefail
+          XCF="$PWD/iosApp/Vendor/WebRTC.xcframework"
+          SIM_DIR=$(dirname "$(find "$XCF" -type d -name WebRTC.framework -path '*simulator*' | head -1)")
+          DEV_DIR=$(dirname "$(find "$XCF" -type d -name WebRTC.framework | grep -E '/ios-arm64/WebRTC.framework$' | head -1)")
+          echo "sim_dir=$SIM_DIR" >> "$GITHUB_OUTPUT"
+          echo "dev_dir=$DEV_DIR" >> "$GITHUB_OUTPUT"
+          echo "Simulateur: $SIM_DIR"
+          echo "Device:     $DEV_DIR"
+          test -d "$SIM_DIR/WebRTC.framework"
+          test -d "$DEV_DIR/WebRTC.framework"
 
       - name: Compile shared for iOS simulator (valide le cinterop WebRTC)
         run: |
-          SIM_SLICE="$PWD/iosApp/Vendor/WebRTC.xcframework/ios-arm64_x86_64-simulator"
           ./gradlew :shared:compileKotlinIosSimulatorArm64 \
-            -Pwebrtc.framework.dir.iosSimulatorArm64="$SIM_SLICE"
+            -Pwebrtc.framework.dir.iosSimulatorArm64="${{ steps.webrtc.outputs.sim_dir }}"
 
       - name: Assemble Shared.xcframework (SKIE inclus)
         run: |
-          DEV_SLICE="$PWD/iosApp/Vendor/WebRTC.xcframework/ios-arm64"
-          SIM_SLICE="$PWD/iosApp/Vendor/WebRTC.xcframework/ios-arm64_x86_64-simulator"
           ./gradlew :shared:assembleSharedXCFramework \
-            -Pwebrtc.framework.dir.iosArm64="$DEV_SLICE" \
-            -Pwebrtc.framework.dir.iosSimulatorArm64="$SIM_SLICE"
+            -Pwebrtc.framework.dir.iosArm64="${{ steps.webrtc.outputs.dev_dir }}" \
+            -Pwebrtc.framework.dir.iosSimulatorArm64="${{ steps.webrtc.outputs.sim_dir }}"
 
       - name: Install XcodeGen
         run: brew install xcodegen
