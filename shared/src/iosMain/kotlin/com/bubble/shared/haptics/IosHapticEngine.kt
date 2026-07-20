@@ -5,6 +5,7 @@ import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import platform.CoreHaptics.CHHapticEngine
 import platform.CoreHaptics.CHHapticEvent
 import platform.CoreHaptics.CHHapticEventParameter

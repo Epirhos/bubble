@@ -1,12 +1,15 @@
 package com.bubble.shared.crypto
 
+import kotlinx.cinterop.COpaquePointer
+import kotlinx.cinterop.COpaquePointerVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.allocArrayOf
 import kotlinx.cinterop.alloc
+import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.cinterop.set
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import kotlinx.serialization.Serializable
@@ -108,12 +111,21 @@ class IosPairedIdentityStore : PairedIdentityStore {
         CFBridgingRelease(query)
     }
 
-    /** Construit un CFDictionary depuis des paires de CFTypeRef (clés/valeurs Security). */
-    private fun cfDictionaryOf(vararg pairs: Pair<CFStringRef?, Any?>): CFDictionaryRef? = memScoped {
-        val keys = allocArrayOf(pairs.map { it.first })
-        val values = allocArrayOf(pairs.map { it.second as? platform.CoreFoundation.CFTypeRef })
+    /**
+     * Construit un CFDictionary depuis des paires clé/valeur CoreFoundation (constantes Security,
+     * CFString, CFData…). Tableaux `COpaquePointerVar` alignés sur la signature attendue par
+     * `CFDictionaryCreate` (CValuesRef<CPointerVarOf<COpaquePointer>>).
+     */
+    private fun cfDictionaryOf(vararg pairs: Pair<CFStringRef?, *>): CFDictionaryRef? = memScoped {
+        val n = pairs.size
+        val keys = allocArray<COpaquePointerVar>(n)
+        val values = allocArray<COpaquePointerVar>(n)
+        pairs.forEachIndexed { i, pair ->
+            keys[i] = pair.first
+            values[i] = pair.second as? COpaquePointer
+        }
         CFDictionaryCreate(
-            null, keys, values, pairs.size.convert(),
+            null, keys, values, n.convert(),
             kCFTypeDictionaryKeyCallBacks.ptr, kCFTypeDictionaryValueCallBacks.ptr,
         )
     }

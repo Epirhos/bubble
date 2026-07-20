@@ -28,14 +28,17 @@ import webrtc.RTCDataChannelConfiguration
 import webrtc.RTCDataChannelDelegateProtocol
 import webrtc.RTCDataChannelState
 import webrtc.RTCIceCandidate
+import webrtc.RTCIceConnectionState
+import webrtc.RTCIceGatheringState
 import webrtc.RTCIceServer
 import webrtc.RTCMediaConstraints
+import webrtc.RTCMediaStream
 import webrtc.RTCPeerConnection
 import webrtc.RTCPeerConnectionDelegateProtocol
 import webrtc.RTCPeerConnectionFactory
-import webrtc.RTCPeerConnectionState
 import webrtc.RTCSdpType
 import webrtc.RTCSessionDescription
+import webrtc.RTCSignalingState
 
 /**
  * Tunnel WebRTC P2P iOS — pendant Kotlin/Native d'AndroidPeerLink, via cinterop direct vers
@@ -117,15 +120,15 @@ class IosPeerLink(
 
     private fun startNegotiation(session: PairingSession) {
         val config = RTCConfiguration().apply {
-            iceServers = listOf(RTCIceServer(urlStrings = listOf("stun:stun.l.google.com:19302")))
+            iceServers = listOf(RTCIceServer(uRLStrings = listOf("stun:stun.l.google.com:19302")))
         }
-        val pc = factory.peerConnectionWithConfiguration(config, defaultConstraints(), PeerObserver())
+        val pc = factory.peerConnectionWithConfiguration(config, defaultConstraints(), PeerObserver()) ?: return
         peer = pc
         if (isInitiator(session)) {
             openChannels(pc)
             pc.offerForConstraints(defaultConstraints()) { sdp, _ ->
                 if (sdp != null) {
-                    pc.setLocalDescription(sdp) { }
+                    pc.setLocalDescription(sdp) { _ -> }
                     scope.launch { signaling.send(SignalingMessage.SdpOffer(sdp.sdp)) }
                 }
             }
@@ -134,29 +137,34 @@ class IosPeerLink(
 
     private fun openChannels(pc: RTCPeerConnection) {
         val metaConfig = RTCDataChannelConfiguration().apply { isOrdered = true }
-        metaChannel = pc.dataChannelForLabel(META_CHANNEL, metaConfig)?.also { it.delegate = ChannelObserver() }
+        val meta = pc.dataChannelForLabel(META_CHANNEL, metaConfig)
+        meta?.delegate = ChannelObserver()
+        metaChannel = meta
+
         val snapConfig = RTCDataChannelConfiguration().apply {
             isOrdered = false
             maxRetransmits = 0 // périssable : le prochain snapshot remplace le perdu
         }
-        snapshotChannel = pc.dataChannelForLabel(SNAPSHOT_CHANNEL, snapConfig)?.also { it.delegate = ChannelObserver() }
+        val snap = pc.dataChannelForLabel(SNAPSHOT_CHANNEL, snapConfig)
+        snap?.delegate = ChannelObserver()
+        snapshotChannel = snap
     }
 
     private fun onSignalingMessage(message: SignalingMessage) {
         val pc = peer ?: return
         when (message) {
             is SignalingMessage.SdpOffer -> {
-                pc.setRemoteDescription(RTCSessionDescription(RTCSdpType.RTCSdpTypeOffer, message.sdp)) {
+                pc.setRemoteDescription(RTCSessionDescription(RTCSdpType.RTCSdpTypeOffer, message.sdp)) { _ ->
                     pc.answerForConstraints(defaultConstraints()) { answer, _ ->
                         if (answer != null) {
-                            pc.setLocalDescription(answer) { }
+                            pc.setLocalDescription(answer) { _ -> }
                             scope.launch { signaling.send(SignalingMessage.SdpAnswer(answer.sdp)) }
                         }
                     }
                 }
             }
             is SignalingMessage.SdpAnswer ->
-                pc.setRemoteDescription(RTCSessionDescription(RTCSdpType.RTCSdpTypeAnswer, message.sdp)) { }
+                pc.setRemoteDescription(RTCSessionDescription(RTCSdpType.RTCSdpTypeAnswer, message.sdp)) { _ -> }
             is SignalingMessage.IceCandidate ->
                 pc.addIceCandidate(RTCIceCandidate(message.candidate, message.sdpMLineIndex, message.sdpMid))
             SignalingMessage.Bye -> {
@@ -205,14 +213,28 @@ class IosPeerLink(
             attachIncomingChannel(didOpenDataChannel)
         }
 
-        override fun peerConnection(peerConnection: RTCPeerConnection, didChangeConnectionState: RTCPeerConnectionState) {
-            when (didChangeConnectionState) {
-                RTCPeerConnectionState.RTCPeerConnectionStateFailed,
-                RTCPeerConnectionState.RTCPeerConnectionStateDisconnected,
+        // Reconnexion basée sur l'état ICE (méthode requise, toujours présente).
+        override fun peerConnection(peerConnection: RTCPeerConnection, didChangeIceConnectionState: RTCIceConnectionState) {
+            when (didChangeIceConnectionState) {
+                RTCIceConnectionState.RTCIceConnectionStateFailed,
+                RTCIceConnectionState.RTCIceConnectionStateDisconnected,
                 -> scheduleReconnect()
                 else -> Unit
             }
         }
+
+        // ── Méthodes requises du protocole (implémentées à vide) ─────────────────
+        override fun peerConnection(peerConnection: RTCPeerConnection, didChangeSignalingState: RTCSignalingState) = Unit
+
+        override fun peerConnection(peerConnection: RTCPeerConnection, didAddStream: RTCMediaStream) = Unit
+
+        override fun peerConnection(peerConnection: RTCPeerConnection, didRemoveStream: RTCMediaStream) = Unit
+
+        override fun peerConnection(peerConnection: RTCPeerConnection, didChangeIceGatheringState: RTCIceGatheringState) = Unit
+
+        override fun peerConnection(peerConnection: RTCPeerConnection, didRemoveIceCandidates: List<*>) = Unit
+
+        override fun peerConnectionShouldNegotiate(peerConnection: RTCPeerConnection) = Unit
     }
 
     private inner class ChannelObserver : NSObject(), RTCDataChannelDelegateProtocol {

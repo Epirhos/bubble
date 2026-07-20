@@ -28,6 +28,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Cache Gradle + Kotlin/Native (LLVM ~1 Go) → économise ~1-2 min par run suivant.
+      - name: Cache Gradle & Konan
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: ${{ runner.os }}-kmp-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-kmp-
+
       # WebRTC.xcframework (stasel) : récupère l'asset de la dernière release via l'API GitHub
       # (robuste au nommage exact du zip), puis extrait dans iosApp/Vendor/.
       - name: Fetch WebRTC.xcframework
