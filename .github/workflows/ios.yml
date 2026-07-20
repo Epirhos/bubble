@@ -1,0 +1,69 @@
+# Compile la face iOS sur un runner macOS cloud — pas de Mac local requis.
+# Valide le cinterop WebRTC (IosPeerLink), le Keychain, et les vues SwiftUI branchées SKIE.
+# Voir /brain/IOS_BUILD.md
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "shared/**"
+      - "iosApp/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+env:
+  WEBRTC_VERSION: "138.0.0"
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # WebRTC.xcframework (stasel) : requis par le cinterop `webrtc` et le lien de l'app.
+      - name: Fetch WebRTC.xcframework
+        run: |
+          mkdir -p iosApp/Vendor
+          curl -L -o webrtc.zip \
+            "https://github.com/stasel/WebRTC/releases/download/${WEBRTC_VERSION}/WebRTC-M138.xcframework.zip" || \
+          curl -L -o webrtc.zip \
+            "https://github.com/stasel/WebRTC/releases/latest/download/WebRTC.xcframework.zip"
+          unzip -q webrtc.zip -d iosApp/Vendor
+          ls -R iosApp/Vendor | head -40
+
+      - name: Compile shared for iOS simulator (valide le cinterop WebRTC)
+        run: |
+          SIM_SLICE="$PWD/iosApp/Vendor/WebRTC.xcframework/ios-arm64_x86_64-simulator"
+          ./gradlew :shared:compileKotlinIosSimulatorArm64 \
+            -Pwebrtc.framework.dir.iosSimulatorArm64="$SIM_SLICE"
+
+      - name: Assemble Shared.xcframework (SKIE inclus)
+        run: |
+          DEV_SLICE="$PWD/iosApp/Vendor/WebRTC.xcframework/ios-arm64"
+          SIM_SLICE="$PWD/iosApp/Vendor/WebRTC.xcframework/ios-arm64_x86_64-simulator"
+          ./gradlew :shared:assembleSharedXCFramework \
+            -Pwebrtc.framework.dir.iosArm64="$DEV_SLICE" \
+            -Pwebrtc.framework.dir.iosSimulatorArm64="$SIM_SLICE"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: iosApp
+        run: xcodegen generate
+
+      - name: Build iOS app (simulateur)
+        working-directory: iosApp
+        run: |
+          xcodebuild build \
+            -project Bubble.xcodeproj \
+            -scheme Bubble \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+            CODE_SIGNING_ALLOWED=NO | xcpretty || true

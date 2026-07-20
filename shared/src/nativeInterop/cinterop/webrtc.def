@@ -1,0 +1,6 @@
+# cinterop vers WebRTC.framework (Google libwebrtc). Le framework est fourni au moment de
+# la compilation iOS (macOS/CI) via le chemin de recherche -F ; sur Windows la tâche cinterop
+# ne s'exécute jamais, donc cette déclaration est inerte. Voir /brain/IOS_BUILD.md.
+language = Objective-C
+modules = WebRTC
+package = webrtc

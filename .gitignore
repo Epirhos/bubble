@@ -1,0 +1,25 @@
+# Gradle / build
+.gradle/
+build/
+*/build/
+**/build/
+
+# Config machine-spécifique (chemin SDK Android local — ne jamais committer)
+local.properties
+
+# Kotlin/Native & Xcode
+*.xcodeproj/
+iosApp/Vendor/
+DerivedData/
+*.xcuserstate
+
+# Modèles ML volumineux (téléchargés au build ; re-fetch via script)
+androidApp/src/main/assets/*.task
+
+# Node (serveur de signalisation)
+node_modules/
+
+# IDE / OS
+.idea/
+.DS_Store
+*.iml

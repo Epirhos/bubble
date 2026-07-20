@@ -1,0 +1,41 @@
+# Projet Xcode généré par XcodeGen : `cd iosApp && xcodegen generate`.
+# Évite de versionner un .xcodeproj fragile. Recette complète : /brain/IOS_BUILD.md
+name: Bubble
+options:
+  bundleIdPrefix: app.bubble
+  deploymentTarget:
+    iOS: "17.0"
+
+targets:
+  Bubble:
+    type: application
+    platform: iOS
+    sources:
+      - Bubble
+    dependencies:
+      # XCFramework produit par `./gradlew :shared:assembleSharedXCFramework`.
+      - framework: ../shared/build/XCFrameworks/release/Shared.xcframework
+        embed: true
+      # Même WebRTC.xcframework que le cinterop (Vendor/, fourni par la CI) : une seule source.
+      - framework: Vendor/WebRTC.xcframework
+        embed: true
+      - target: BubbleWidget
+    settings:
+      base:
+        INFOPLIST_KEY_NSCameraUsageDescription: "Bubble utilise la caméra pour le Portail et les gestes."
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        CODE_SIGN_ENTITLEMENTS: Bubble/Bubble.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: app.bubble.Bubble
+
+  BubbleWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - BubbleWidget
+    dependencies:
+      - framework: ../shared/build/XCFrameworks/release/Shared.xcframework
+        embed: false
+    settings:
+      base:
+        CODE_SIGN_ENTITLEMENTS: BubbleWidget/BubbleWidget.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: app.bubble.Bubble.Widget

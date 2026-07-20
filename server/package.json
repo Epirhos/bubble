@@ -1,0 +1,14 @@
+{
+  "name": "bubble-signaling",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Relai de signalisation WebRTC pour Bubble — rooms strictes de 2, zéro persistance.",
+  "main": "signaling-server.js",
+  "scripts": {
+    "start": "node signaling-server.js",
+    "smoke": "node smoke-test.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
