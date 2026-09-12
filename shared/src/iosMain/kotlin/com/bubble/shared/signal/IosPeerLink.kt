@@ -3,6 +3,7 @@ package com.bubble.shared.signal
 import com.bubble.shared.crypto.MessageCipher
 import com.bubble.shared.crypto.PairingSession
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCSignatureOverride
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.usePinned
@@ -21,24 +22,12 @@ import platform.Foundation.NSData
 import platform.Foundation.create
 import platform.darwin.NSObject
 import platform.posix.memcpy
-import webrtc.RTCConfiguration
-import webrtc.RTCDataBuffer
-import webrtc.RTCDataChannel
-import webrtc.RTCDataChannelConfiguration
-import webrtc.RTCDataChannelDelegateProtocol
-import webrtc.RTCDataChannelState
-import webrtc.RTCIceCandidate
-import webrtc.RTCIceConnectionState
-import webrtc.RTCIceGatheringState
-import webrtc.RTCIceServer
-import webrtc.RTCMediaConstraints
-import webrtc.RTCMediaStream
-import webrtc.RTCPeerConnection
-import webrtc.RTCPeerConnectionDelegateProtocol
-import webrtc.RTCPeerConnectionFactory
-import webrtc.RTCSdpType
-import webrtc.RTCSessionDescription
-import webrtc.RTCSignalingState
+// Import large du paquet cinterop, volontairement : les CATEGORIES Objective-C
+// (ex. `RTCPeerConnection (DataChannel)` -> dataChannelForLabel:configuration:) sont traduites
+// en fonctions d'extension Kotlin, et une extension n'est pas apportee par l'import de la
+// classe qu'elle etend. Les lister une par une faisait echouer la compilation sur
+// "Unresolved reference 'dataChannelForLabel'".
+import webrtc.*
 
 /**
  * Tunnel WebRTC P2P iOS — pendant Kotlin/Native d'AndroidPeerLink, via cinterop direct vers
@@ -226,8 +215,14 @@ class IosPeerLink(
         // ── Méthodes requises du protocole (implémentées à vide) ─────────────────
         override fun peerConnection(peerConnection: RTCPeerConnection, didChangeSignalingState: RTCSignalingState) = Unit
 
+        // -peerConnection:didAddStream: et -peerConnection:didRemoveStream: se projettent sur
+        // la MEME signature Kotlin (RTCPeerConnection, RTCMediaStream) : seul le nom du
+        // parametre differe, ce qui ne distingue pas deux surcharges. @ObjCSignatureOverride
+        // autorise la collision pour des methodes heritees d'Objective-C.
+        @ObjCSignatureOverride
         override fun peerConnection(peerConnection: RTCPeerConnection, didAddStream: RTCMediaStream) = Unit
 
+        @ObjCSignatureOverride
         override fun peerConnection(peerConnection: RTCPeerConnection, didRemoveStream: RTCMediaStream) = Unit
 
         override fun peerConnection(peerConnection: RTCPeerConnection, didChangeIceGatheringState: RTCIceGatheringState) = Unit

@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       webrtc_release:
-        description: "Tag de release stasel/WebRTC (ex: 137.0.0). Vide = latest."
+        description: "Tag stasel/WebRTC a utiliser, ou 'latest'. Vide = version epinglee."
         required: false
         default: ""
 
@@ -60,6 +60,12 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      # Version EPINGLEE : le cinterop depend de l'entete Objective-C de cette build precise.
+      # Avec `latest`, une nouvelle release WebRTC peut renommer une methode et casser le
+      # build sans qu'une ligne du repo ait bouge — impossible a distinguer d'une regression.
+      # Les en-tetes de 153.0.0 ont ete lus pour ecrire IosPeerLink. Monter cette version est
+      # un acte deliberé : relancer d'abord en manuel avec `latest` pour voir ce qui casse.
+      WEBRTC_RELEASE: "153.0.0"
     steps:
       - uses: actions/checkout@v4
 
@@ -111,7 +117,8 @@ jobs:
         run: |
           set -euo pipefail
           DEMANDE="${{ inputs.webrtc_release }}"
-          if [ -n "$DEMANDE" ]; then
+          if [ -z "$DEMANDE" ]; then DEMANDE="$WEBRTC_RELEASE"; fi
+          if [ "$DEMANDE" != "latest" ]; then
             API="https://api.github.com/repos/stasel/WebRTC/releases/tags/$DEMANDE"
           else
             API="https://api.github.com/repos/stasel/WebRTC/releases/latest"
