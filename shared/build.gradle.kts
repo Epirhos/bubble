@@ -54,7 +54,7 @@ kotlin {
         androidMain.dependencies {
             // WebRTC natif (repackage Google libwebrtc, org.webrtc.*) + WebSocket de signalisation.
             implementation("io.getstream:stream-webrtc-android:1.1.3")
-            implementation("com.squareup.okhttp3:okhttp:4.12.0")
+            implementation("com.squareup.okhttp3:okhttp:5.5.0")
         }
     }
 }
