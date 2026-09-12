@@ -2,10 +2,25 @@
 # une minute macOS (facturée 10x). Le job iOS (.github/workflows/ios.yml) attend ce workflow.
 name: CI
 
+# Un commit de documentation seul ne declenche rien : aucune minute payee pour un .md.
+# (Ne pas transformer CI en status check obligatoire tant que ce filtre existe : un run
+# "skipped" bloquerait la fusion d'une PR purement documentaire.)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "**/*.pdf"
+      - "brain/**"
+      - ".gitignore"
+      - ".gitattributes"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "**/*.pdf"
+      - "brain/**"
+      - ".gitignore"
+      - ".gitattributes"
   workflow_dispatch:
 
 # Un push qui en remplace un autre annule le run précédent : zéro minute gaspillée.

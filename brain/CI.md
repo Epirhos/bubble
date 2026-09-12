@@ -6,7 +6,7 @@ raté sur une faute qu'un runner Linux aurait attrapée, c'est de l'argent brûl
 
 | Fichier | Déclencheur | Runner | Rôle |
 |---|---|---|---|
-| `.github/workflows/ci.yml` | push `main`, **toute PR** | ubuntu (1x) | tests moteur + APK debug + smoke test du relai |
+| `.github/workflows/ci.yml` | push `main`, **toute PR** (hors docs) | ubuntu (1x) | tests moteur + APK debug + smoke test du relai |
 | `.github/workflows/ios.yml` | push `main` (chemins iOS), manuel | ubuntu puis macOS (10x) | XCFramework SKIE + app iOS simulateur |
 | `.github/dependabot.yml` | hebdo / mensuel | — | mises à jour groupées |
 
@@ -22,6 +22,9 @@ raté sur une faute qu'un runner Linux aurait attrapée, c'est de l'argent brûl
 - **`paths:`** sur `ios.yml` : toucher `androidApp/` ou `server/` ne réveille pas macOS.
 - **Caches** : `~/.gradle` (setup-gradle), `~/.konan` (~1 Go de toolchain LLVM, sinon
   retéléchargé à chaque run), et `iosApp/Vendor` (WebRTC.xcframework, clé = tag de release).
+- **`paths-ignore` sur `ci.yml`** : un commit qui ne touche que des `.md`, `brain/` ou le
+  `.gitignore` ne déclenche rien. Corollaire à ne pas oublier : ne pas ériger CI en status check
+  obligatoire, un run « skipped » bloquerait la fusion d'une PR purement documentaire.
 - **`assembleSharedReleaseXCFramework`** et non `assembleSharedXCFramework` : ce dernier
   linke aussi la variante debug, soit ~2x le temps Kotlin/Native, pour un artefact que
   `project.yml` ne consomme jamais.
@@ -54,15 +57,38 @@ Le workflow est conçu pour qu'un seul run suffise à comprendre. Dans l'ordre :
 1. **Résumé du run** — la version exacte de WebRTC utilisée y est écrite.
 2. **Artefact `logs-xcode`** — `xcodebuild.log` complet + le `project.pbxproj` généré.
 3. **Étape « Environnement du runner »** — version de macOS, d'Xcode, du SDK simulateur.
+4. **Le log `xcodebuild` est filtré pour toi** : la console affiche les lignes `error:`/
+   `warning:`, le verdict `** BUILD … **` et les 40 dernières lignes. Le log brut (des dizaines
+   de milliers de lignes, où l'erreur se noie) part dans l'artefact.
 
-Les erreurs de cinterop (nom de classe / de méthode ObjC absent) dépendent de la build WebRTC.
-Si `latest` a bougé et casse, relancer **`workflow_dispatch`** en renseignant `webrtc_release`
-avec le dernier tag connu bon, puis figer ce tag une fois vert.
+### Diagnostiquer un problème de cinterop SANS payer de run
+
+C'est la technique qui a résolu le 1er échec. `WebRTC.xcframework` fait ~45 Mo et **contient les
+entêtes Objective-C**. Les télécharger et les lire tranche n'importe quel doute de nommage,
+gratuitement, depuis Windows :
+
+```bash
+# 1. recuperer l'URL de l'asset, 2. le telecharger, 3. n'extraire que les entetes
+URL=$(curl -fsSL https://api.github.com/repos/stasel/WebRTC/releases/tags/153.0.0 \
+  | grep browser_download_url | grep -i xcframework.zip | head -1 | cut -d'"' -f4)
+curl -fL -o webrtc.zip "$URL"
+# puis : unzip -q webrtc.zip "WebRTC.xcframework/ios-arm64/WebRTC.framework/Headers/*"
+#        grep -B8 dataChannelForLabel Headers/RTCPeerConnection.h
+```
+
+Vérifier en particulier si la méthode est déclarée dans une **catégorie** (`@interface X (Nom)`)
+plutôt que sur l'interface principale : c'est la source d'erreur la plus sournoise (voir plus bas).
+
+La version WebRTC est **épinglée** (`WEBRTC_RELEASE` dans `ios.yml`). Pour en essayer une autre :
+`workflow_dispatch` avec `webrtc_release: latest` ou un tag précis, puis épingler une fois vert.
 
 ## Pièges déjà désamorcés (ne pas les réintroduire)
 
 - **`| xcpretty || true`** : masquait l'échec du build. Un run vert qui ne prouve rien coûte
-  autant qu'un run rouge. Le `xcodebuild` est maintenant sous `set -o pipefail`, sans filet.
+  autant qu'un run rouge. L'étape capture désormais le statut de `xcodebuild` dans `$STATUT` et
+  se termine par `exit $STATUT` : le filtrage du log ne peut plus avaler l'échec. (Un `| tee`
+  naïf ne suffisait pas non plus : sous `pipefail`, un `grep` sans correspondance aurait fait
+  rougir un build sain.)
 - **`-destination 'platform=iOS Simulator,name=iPhone 15'`** : le nom du device disparaît
   d'une image d'Xcode à l'autre → `generic/platform=iOS Simulator`, qui ne boote rien.
 - **API GitHub sans jeton** : 60 requêtes/heure **partagées entre tous les runners** de
@@ -74,6 +100,19 @@ avec le dernier tag connu bon, puis figer ce tag une fois vert.
 - **Widget sans `NSExtensionPointIdentifier`** : Xcode refuse d'embarquer l'extension.
 - **`org.gradle.jvmargs=-Xmx2g`** : suffisant pour Android, pas pour le link Kotlin/Native
   + SKIE → 4 Go.
+- **Méthode ObjC issue d'une CATÉGORIE** : Kotlin/Native traduit les catégories en **fonctions
+  d'extension**, et importer la classe n'apporte pas ses extensions. `dataChannelForLabel`
+  (catégorie `RTCPeerConnection (DataChannel)`) échouait en « Unresolved reference » alors que
+  tout le reste résolvait. D'où `import webrtc.*` plutôt que 18 imports nommés — un import large
+  est ici le choix robuste, pas de la paresse : il couvre les catégories futures.
+- **Deux sélecteurs ObjC, une seule signature Kotlin** : `-peerConnection:didAddStream:` et
+  `-peerConnection:didRemoveStream:` se projettent tous deux sur
+  `(RTCPeerConnection, RTCMediaStream)` ; seul le nom du paramètre change, ce qui ne distingue
+  pas deux surcharges → `@ObjCSignatureOverride` sur les deux.
+- **`iosMain` n'est PAS vérifiable sous Windows.** `kotlin.native.ignoreDisabledTargets=true`
+  désactive les cibles natives : `compileIosMainKotlinMetadata` ressort **SKIPPED** et le build
+  est « SUCCESSFUL » sans avoir lu une ligne d'`iosMain`. Ne jamais prendre ce vert pour une
+  validation du code iOS.
 - **CRLF sur `gradlew`** : `.gitattributes` force LF, sinon le runner macOS répond
   `bad interpreter: ^M`.
 

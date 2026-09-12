@@ -33,16 +33,27 @@ open Bubble.xcodeproj
 de `Vendor/` (embarqué : dynamique) et le `Shared.xcframework` (NON embarqué : statique, fondu
 au link). Ni CocoaPods ni SPM. Le widget ne lie pas `Shared` — voir /brain/CI.md.
 
-## 3. Dette de code — ÉCRITE ET BRANCHÉE (à valider au 1er passage CI/Mac)
+## 3. Dette de code — ÉCRITE, BRANCHÉE, ET COMPILÉE EN CI
+> État au 12/09/2026, établi par les deux premiers runs macOS réels (`.github/workflows/ios.yml`).
+> **Compile et linke** : cinterop WebRTC, tout `iosMain`, le link Kotlin/Native du framework
+> statique, SKIE, l'assemblage du XCFramework, et sa consommation par Xcode 16.2.
+> **Pas encore prouvé** : le Swift de la cible `Bubble` (donc la consommation effective des
+> bindings SKIE) et l'édition de liens finale de l'app. Aucun comportement à l'exécution n'est
+> testé — rien n'a jamais tourné sur un simulateur.
 - **`IosPeerLink`** (iosMain, `signal/IosPeerLink.kt`) : `PeerLink` en Kotlin/Native via **cinterop
   direct** vers WebRTC.framework (pas de pont Swift). Pilote `RTCPeerConnection`, implémente les
   delegates ObjC (`RTCPeerConnectionDelegateProtocol`/`RTCDataChannelDelegateProtocol`) en Kotlin,
   garde flows + E2EE (`AeadMessageCipher`) + rôle déterministe + reconnexion backoff. Symétrie
   totale avec AndroidPeerLink. cinterop déclaré dans `shared/build.gradle.kts` + `webrtc.def`.
+  Deux corrections ont été nécessaires au 1er run (voir /brain/CI.md) : `dataChannelForLabel`
+  vient d'une **catégorie** ObjC, donc d'une extension Kotlin qu'un import de classe n'apporte
+  pas (`import webrtc.*`) ; et `didAddStream`/`didRemoveStream` se projettent sur la même
+  signature Kotlin, d'où `@ObjCSignatureOverride`.
 - **`IosSignalingClient`** (iosMain) : `SignalingClient` via `NSURLSessionWebSocketTask`.
 - **`IosPairedIdentityStore`** (iosMain, `crypto/`) : identité chiffrée au repos dans le **Keychain**
   (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, clé de classe Secure Enclave = équivalent de
-  l'enveloppe AES-GCM Android). Pont CoreFoundation à confirmer en CI.
+  l'enveloppe AES-GCM Android). Pont CoreFoundation : **compile et linke** en CI ; le
+  comportement au runtime (accès réel au Keychain) reste à vérifier sur simulateur/appareil.
 - **`IosBubbleGraph`** (iosMain, `di/`) : racine de composition (pendant de BubbleApplication) —
   moteur + IosHapticEngine (CoreHaptics) + Keychain + cycle de vie du lien E2EE + orchestration
   complète de la cérémonie de pairage, exposée à Swift en **flux simples (bool/data class)** pour
@@ -54,9 +65,24 @@ au link). Ni CocoaPods ni SPM. Le widget ne lie pas `Shared` — voir /brain/CI.
 
 ## 3bis. Provisionnement WebRTC (cinterop + lien app)
 Le cinterop et l'app utilisent le MÊME `WebRTC.xcframework` (stasel), placé dans `iosApp/Vendor/`
-par la CI. Slices : `ios-arm64` (device) et `ios-arm64_x86_64-simulator`. Gradle reçoit le chemin
-via `-Pwebrtc.framework.dir.<target>=<slice>`. Le premier run CI confirmera les noms exacts de
-classes/méthodes cinterop (dépendants de l'entête ObjC du build WebRTC).
+par la CI. Gradle reçoit le chemin via `-Pwebrtc.framework.dir.<target>=<slice>`.
+
+Version **épinglée à `153.0.0`** dans `ios.yml` (`WEBRTC_RELEASE`). Ce n'est pas de la prudence
+gratuite : les noms de classes/méthodes du cinterop viennent de l'entête ObjC de cette build
+précise. En `latest`, une release amont peut casser la compilation sans qu'une ligne du repo ait
+bougé — indiscernable d'une régression qu'on aurait introduite. Pour monter de version :
+`workflow_dispatch` avec `webrtc_release: latest`, constater, puis épingler le nouveau tag.
+
+Slices réelles de 153.0.0 (relevées dans l'archive, pas devinées) :
+`ios-arm64` (device), `ios-x86_64_arm64-simulator` (simulateur — noter l'ordre des archis, qui
+diffère du nommage Apple habituel), plus `ios-x86_64_arm64-maccatalyst` et `macos-x86_64_arm64`
+qu'on n'utilise pas. Le workflow les localise par motif (`*simulator*`, `/ios-arm64/…$`) plutôt
+qu'en dur, précisément parce que ces noms varient d'une build à l'autre.
+
+Astuce vérification sans macOS : l'archive fait ~45 Mo et contient les entêtes ObjC. La
+télécharger et lire `Headers/RTCPeerConnection.h` permet de trancher un doute de nommage
+cinterop **sans payer de run** — c'est comme ça que les deux erreurs du 1er run ont été
+diagnostiquées.
 
 ## 4. Brancher via SKIE (déjà généré en 1)
 - `import Shared` puis remplacer les `TODO(SKIE)` de `LiveViewModel.swift`/`PairingViewModel.swift` :

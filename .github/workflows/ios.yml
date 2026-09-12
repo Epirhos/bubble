@@ -208,19 +208,38 @@ jobs:
 
       # `generic/platform=iOS Simulator` : compile sans booter de simulateur et sans dependre
       # d'un nom de device ("iPhone 15" disparait d'une image d'Xcode a l'autre).
-      # Pas de `|| true` : un build casse DOIT faire rougir le run — un vert mensonger, c'est
-      # une facture macOS payee pour rien.
+      #
+      # xcodebuild est extremement verbeux : il echo chaque invocation clang/swiftc, ce qui
+      # noie l'erreur dans des dizaines de milliers de lignes illisibles dans la console.
+      # Le log COMPLET part dans un fichier (publie en artefact) ; la console ne recoit que
+      # les lignes error:/warning:, le verdict `** BUILD ... **` et la fin du log.
+      # Le code de sortie reel de xcodebuild est propage tel quel (pas de `|| true`) : un
+      # build casse DOIT faire rougir le run — un vert mensonger, c'est une facture payee
+      # pour rien.
       - name: Compiler l'app iOS (simulateur)
         working-directory: iosApp
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          LOG="$RUNNER_TEMP/xcodebuild.log"
+          set +e
           xcodebuild build \
             -project Bubble.xcodeproj \
             -scheme Bubble \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+            > "$LOG" 2>&1
+          STATUT=$?
+          set -e
+          echo "::group::Erreurs, avertissements et verdict"
+          grep -nE '(error|warning): |^\*\* ' "$LOG" | head -80 \
+            || echo "(aucune ligne error:/warning: dans le log)"
+          echo "::endgroup::"
+          echo "::group::40 dernieres lignes du log"
+          tail -40 "$LOG"
+          echo "::endgroup::"
+          echo "Log complet : $(wc -l < "$LOG") lignes, dans l'artefact logs-xcode."
+          exit $STATUT
 
       # Le log complet evite un second run macOS juste pour relire l'erreur.
       - name: Publier les logs Xcode
