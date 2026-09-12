@@ -39,12 +39,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - run: chmod +x gradlew
       - name: Tests du moteur
         run: ./gradlew :shared:jvmTest --stacktrace
@@ -67,7 +67,7 @@ jobs:
       # un acte deliberé : relancer d'abord en manuel avec `latest` pour voir ce qui casse.
       WEBRTC_RELEASE: "153.0.0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Diagnostic d'abord : si le build casse plus loin, on saura sur quel Xcode.
       - name: Environnement du runner
@@ -93,18 +93,18 @@ jobs:
         run: chmod +x gradlew
 
       - name: JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # Kotlin/Native télécharge ~1 Go de toolchain LLVM au premier run : à cacher à part
       # (setup-gradle ne couvre que ~/.gradle). Clé sur les versions Kotlin/AGP déclarées.
       - name: Cache Kotlin/Native (~/.konan)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('build.gradle.kts', 'shared/build.gradle.kts') }}
@@ -138,7 +138,7 @@ jobs:
 
       - name: Cache WebRTC.xcframework
         id: webrtc_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: iosApp/Vendor
           key: webrtc-${{ steps.webrtc_release.outputs.tag }}
@@ -225,7 +225,7 @@ jobs:
       # Le log complet evite un second run macOS juste pour relire l'erreur.
       - name: Publier les logs Xcode
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: logs-xcode
           path: |
