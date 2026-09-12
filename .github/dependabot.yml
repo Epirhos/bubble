@@ -1,0 +1,63 @@
+# Mises à jour automatiques des dépendances.
+#
+# Règle de coût : chaque PR Dependabot déclenche CI (Linux, ~1x). Le workflow iOS, lui, ne
+# se déclenche QUE sur push vers main — aucune PR de mise à jour ne consomme de minute macOS.
+# Les updates sont donc groupées et plafonnées pour rester dans un budget prévisible :
+# ~1 PR par écosystème et par semaine au lieu d'une PR par dépendance.
+version: 2
+updates:
+  # Kotlin / AGP / AndroidX / MediaPipe / SKIE.
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 3
+    groups:
+      # Kotlin + SKIE + le plugin Compose sont versionnés ensemble : les monter séparément
+      # casse la compilation (SKIE est publié pour une version exacte de Kotlin).
+      kotlin-toolchain:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "co.touchlab.skie*"
+      androidx:
+        patterns:
+          - "androidx.*"
+          - "com.android.tools.build:gradle"
+      autres-mineures:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "deps"
+
+  # Relai de signalisation (ws).
+  - package-ecosystem: npm
+    directory: "/server"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 2
+    groups:
+      serveur:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps(server)"
+
+  # actions/checkout, setup-java, cache… — une action périmée casse la CI sans prévenir.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"

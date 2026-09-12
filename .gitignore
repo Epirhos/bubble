@@ -13,7 +13,7 @@ iosApp/Vendor/
 DerivedData/
 *.xcuserstate
 
-# Modèles ML volumineux (téléchargés au build ; re-fetch via script)
+# Modèles ML volumineux (~11 Mo) — récupérés par ./scripts/fetch-models.sh
 androidApp/src/main/assets/*.task
 
 # Node (serveur de signalisation)
@@ -23,3 +23,9 @@ node_modules/
 .idea/
 .DS_Store
 *.iml
+
+# Caches Kotlin locaux (logs d'erreurs / sessions du daemon)
+.kotlin/
+
+# Archives téléchargées par la CI iOS (WebRTC.xcframework)
+webrtc.zip

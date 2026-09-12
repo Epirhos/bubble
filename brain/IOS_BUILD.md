@@ -9,11 +9,14 @@
 - **Mac physique / VM** : le plus simple si dispo.
 - **Mac cloud** (MacStadium, MacinCloud, AWS EC2 mac) : location à l'heure.
 - **CI GitHub Actions `macos-14`** (recommandé, zéro Mac local) : voir `.github/workflows/ios.yml`.
-  La CI compile le XCFramework + l'app à chaque push — c'est ce qui « débloque structurellement ».
+  La CI compile le XCFramework + l'app à chaque push sur `main` touchant `shared/` ou `iosApp/`
+  — c'est ce qui « débloque structurellement ». **Coût et diagnostic : /brain/CI.md.**
 
 ## 1. Générer le framework partagé (SKIE inclus)
 ```bash
-./gradlew :shared:assembleSharedXCFramework
+# Variante Release seule : `assembleSharedXCFramework` linkerait aussi le debug (~2x le temps
+# Kotlin/Native) pour un artefact que project.yml ne consomme pas. La CI utilise celle-ci.
+./gradlew :shared:assembleSharedReleaseXCFramework
 # → shared/build/XCFrameworks/release/Shared.xcframework  (bindings Swift SKIE cuits dedans)
 ```
 
@@ -26,8 +29,9 @@ cd iosApp && xcodegen generate      # → Bubble.xcodeproj
 open Bubble.xcodeproj
 ```
 `project.yml` déclare : la cible app `Bubble`, l'extension widget `BubbleWidget`, l'App Group
-`group.app.bubble.shared` (pont app↔widget), le package SPM WebRTC (stasel/WebRTC) et le lien
-vers `Shared.xcframework`. Aucun CocoaPods.
+`group.app.bubble.shared` (pont app↔widget, via les `.entitlements`), le `WebRTC.xcframework`
+de `Vendor/` (embarqué : dynamique) et le `Shared.xcframework` (NON embarqué : statique, fondu
+au link). Ni CocoaPods ni SPM. Le widget ne lie pas `Shared` — voir /brain/CI.md.
 
 ## 3. Dette de code — ÉCRITE ET BRANCHÉE (à valider au 1er passage CI/Mac)
 - **`IosPeerLink`** (iosMain, `signal/IosPeerLink.kt`) : `PeerLink` en Kotlin/Native via **cinterop
@@ -61,7 +65,8 @@ classes/méthodes cinterop (dépendants de l'entête ObjC du build WebRTC).
   - `switch payload { case .snapshot: … }` (sealed→enum Swift)
 
 ## 5. Lancer
-Cmd+R au simulateur, ou `xcodebuild -scheme Bubble -destination 'platform=iOS Simulator,name=iPhone 15'`.
+Cmd+R au simulateur, ou `xcodebuild -scheme Bubble -destination 'generic/platform=iOS Simulator'`
+(destination générique : ne dépend d'aucun nom de device, qui varie d'un Xcode à l'autre).
 
 ## Résumé : ce qui reste vraiment
 Aucune logique métier. Uniquement : lancer la recette sur macOS + écrire `IosPeerLink`,

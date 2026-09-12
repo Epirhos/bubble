@@ -13,16 +13,22 @@ targets:
     sources:
       - Bubble
     dependencies:
-      # XCFramework produit par `./gradlew :shared:assembleSharedXCFramework`.
+      # XCFramework produit par `./gradlew :shared:assembleSharedReleaseXCFramework`.
+      # embed: false — le framework Kotlin est STATIQUE (isStatic = true dans
+      # shared/build.gradle.kts) : il est fondu dans le binaire au link. L'embarquer en plus
+      # copierait un binaire statique dans Frameworks/ (codesign / validation en échec).
       - framework: ../shared/build/XCFrameworks/release/Shared.xcframework
-        embed: true
+        embed: false
       # Même WebRTC.xcframework que le cinterop (Vendor/, fourni par la CI) : une seule source.
+      # Dynamique, lui : il doit bien être embarqué.
       - framework: Vendor/WebRTC.xcframework
         embed: true
       - target: BubbleWidget
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_NSCameraUsageDescription: "Bubble utilise la caméra pour le Portail et les gestes."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Bubble utilise le micro pour la voix du Portail."
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         CODE_SIGN_ENTITLEMENTS: Bubble/Bubble.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: app.bubble.Bubble
@@ -32,10 +38,16 @@ targets:
     platform: iOS
     sources:
       - BubbleWidget
-    dependencies:
-      - framework: ../shared/build/XCFrameworks/release/Shared.xcframework
-        embed: false
+    # Aucune dépendance vers Shared.xcframework : les sources du widget n'importent que
+    # SwiftUI/WidgetKit/Foundation (elles lisent l'App Group via WidgetStorage.swift).
+    # Lier le framework Kotlin statique ici ferait entrer les symboles WebRTC du cinterop
+    # dans l'extension, qui ne lie pas WebRTC → "Undefined symbols" au link.
+    # Si le widget doit un jour utiliser Shared, ajouter AUSSI Vendor/WebRTC.xcframework.
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        # Sans ce point d'extension, Xcode refuse d'embarquer l'extension dans l'app.
+        INFOPLIST_KEY_NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        INFOPLIST_KEY_CFBundleDisplayName: Bubble
         CODE_SIGN_ENTITLEMENTS: BubbleWidget/BubbleWidget.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: app.bubble.Bubble.Widget

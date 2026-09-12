@@ -1,0 +1,14 @@
+# Le repo est édité sous Windows mais la CI iOS tourne sur macOS : forcer LF sur tout ce
+# qui est exécuté par un shell POSIX, sinon `./gradlew` échoue en "bad interpreter ^M".
+* text=auto eol=lf
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+gradlew.bat text eol=crlf
+
+# Binaires : jamais de normalisation de fins de ligne.
+*.jar binary
+*.task binary
+*.pdf binary
+*.png binary
+*.jpg binary

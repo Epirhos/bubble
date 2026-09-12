@@ -1,6 +1,10 @@
 # Compile la face iOS sur un runner macOS cloud — pas de Mac local requis.
 # Valide le cinterop WebRTC (IosPeerLink), le Keychain, et les vues SwiftUI branchées SKIE.
-# Voir /brain/IOS_BUILD.md
+# Voir /brain/IOS_BUILD.md et /brain/CI.md
+#
+# COÛT : une minute macOS est facturée 10x une minute Linux. Ce workflow est donc conçu
+# pour qu'un run rate le plus tôt possible, et pour qu'un run raté livre assez de logs
+# pour corriger sans relancer. Le job `precheck` (Linux, 1x) garde la porte.
 name: iOS
 
 on:
@@ -9,88 +13,216 @@ on:
     paths:
       - "shared/**"
       - "iosApp/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
       - ".github/workflows/ios.yml"
   workflow_dispatch:
+    inputs:
+      webrtc_release:
+        description: "Tag de release stasel/WebRTC (ex: 137.0.0). Vide = latest."
+        required: false
+        default: ""
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  # Porte d'entrée sur Linux : si le moteur partagé ne compile même pas pour la JVM,
+  # inutile de réserver un runner macOS. Coûte ~2 min à 1x au lieu de ~20 min à 10x.
+  precheck:
+    name: Pré-vol (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - name: Tests du moteur
+        run: ./gradlew :shared:jvmTest --stacktrace
+
   build-ios:
+    name: XCFramework + app (macOS)
+    needs: precheck
     runs-on: macos-14
+    timeout-minutes: 75
+    env:
+      # Le téléchargement passe par l'API GitHub : sans jeton, la limite anonyme est de
+      # 60 requêtes/heure PARTAGÉES entre tous les runners — cause classique d'échec.
+      GH_TOKEN: ${{ github.token }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@v4
 
+      # Diagnostic d'abord : si le build casse plus loin, on saura sur quel Xcode.
+      - name: Environnement du runner
+        run: |
+          set -euxo pipefail
+          sw_vers
+          ls -d /Applications/Xcode*.app
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      # Kotlin/Native 2.2.20 est validé jusqu'à Xcode 16.x. Si une 16.x est présente sur
+      # l'image, on s'y accroche ; sinon on garde le défaut plutôt que d'échouer sur un
+      # chemin en dur (les images changent de version d'Xcode sans préavis).
+      - name: Sélectionner Xcode 16.x si disponible
+        run: |
+          set -euo pipefail
+          CANDIDAT=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$CANDIDAT" ]; then sudo xcode-select -s "$CANDIDAT"; fi
+          xcodebuild -version
+
       # gradlew a été créé sous Windows (sans bit exécutable) → l'ajouter sur le runner macOS.
-      - name: Make gradlew executable
+      - name: Rendre gradlew exécutable
         run: chmod +x gradlew
 
-      - name: Set up JDK 17
+      - name: JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
-      # Cache Gradle + Kotlin/Native (LLVM ~1 Go) → économise ~1-2 min par run suivant.
-      - name: Cache Gradle & Konan
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Kotlin/Native télécharge ~1 Go de toolchain LLVM au premier run : à cacher à part
+      # (setup-gradle ne couvre que ~/.gradle). Clé sur les versions Kotlin/AGP déclarées.
+      - name: Cache Kotlin/Native (~/.konan)
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.konan
-          key: ${{ runner.os }}-kmp-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: ${{ runner.os }}-kmp-
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('build.gradle.kts', 'shared/build.gradle.kts') }}
+          restore-keys: konan-${{ runner.os }}-
 
-      # WebRTC.xcframework (stasel) : récupère l'asset de la dernière release via l'API GitHub
-      # (robuste au nommage exact du zip), puis extrait dans iosApp/Vendor/.
-      - name: Fetch WebRTC.xcframework
+      # Résout le tag AVANT le cache : la clé de cache doit contenir la version exacte,
+      # sinon un `latest` qui bouge servirait un vieux xcframework depuis le cache.
+      - name: Résoudre la release WebRTC
+        id: webrtc_release
         run: |
           set -euo pipefail
-          ASSET_URL=$(curl -fsSL https://api.github.com/repos/stasel/WebRTC/releases/latest \
-            | grep browser_download_url | grep -i 'xcframework.zip' | head -1 | cut -d '"' -f4)
-          echo "WebRTC asset: $ASSET_URL"
-          curl -fL -o webrtc.zip "$ASSET_URL"
+          DEMANDE="${{ inputs.webrtc_release }}"
+          if [ -n "$DEMANDE" ]; then
+            API="https://api.github.com/repos/stasel/WebRTC/releases/tags/$DEMANDE"
+          else
+            API="https://api.github.com/repos/stasel/WebRTC/releases/latest"
+          fi
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+                     -H "Accept: application/vnd.github+json" "$API" > release.json
+          TAG=$(grep -m1 '"tag_name"' release.json | cut -d '"' -f4)
+          URL=$(grep 'browser_download_url' release.json | grep -i 'xcframework.zip' | head -1 | cut -d '"' -f4)
+          test -n "$TAG"
+          test -n "$URL"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          # Reporté dans le résumé du run : c'est cette valeur qu'on épingle en cas de
+          # régression cinterop (relancer via workflow_dispatch avec le dernier tag connu bon).
+          echo "WebRTC utilise : **$TAG**" >> "$GITHUB_STEP_SUMMARY"
+          rm -f release.json
+
+      - name: Cache WebRTC.xcframework
+        id: webrtc_cache
+        uses: actions/cache@v4
+        with:
+          path: iosApp/Vendor
+          key: webrtc-${{ steps.webrtc_release.outputs.tag }}
+
+      - name: Telecharger WebRTC.xcframework
+        if: steps.webrtc_cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -o webrtc.zip "${{ steps.webrtc_release.outputs.url }}"
           mkdir -p iosApp/Vendor
           unzip -q webrtc.zip -d iosApp/Vendor
-          echo "=== Arborescence Vendor ==="
-          find iosApp/Vendor -maxdepth 3 -type d
+          # Certaines releases emballent le xcframework dans un sous-dossier : on remet
+          # l'artefact la ou project.yml l'attend (iosApp/Vendor/WebRTC.xcframework).
+          if [ ! -d iosApp/Vendor/WebRTC.xcframework ]; then
+            TROUVE=$(find iosApp/Vendor -maxdepth 4 -type d -name 'WebRTC.xcframework' | head -1)
+            test -n "$TROUVE"
+            mv "$TROUVE" iosApp/Vendor/WebRTC.xcframework
+          fi
+          rm -f webrtc.zip
 
-      # Localise les slices device/simulateur dynamiquement (les noms de dossiers varient).
-      - name: Locate WebRTC slices
+      # Les noms de slices varient selon le build WebRTC : on les localise au lieu de les
+      # coder en dur, et on echoue ici (10 s) plutot qu'au milieu du cinterop (10 min).
+      - name: Localiser les slices WebRTC
         id: webrtc
         run: |
           set -euo pipefail
           XCF="$PWD/iosApp/Vendor/WebRTC.xcframework"
+          if [ ! -d "$XCF" ]; then echo "::error::WebRTC.xcframework absent de iosApp/Vendor"; exit 1; fi
+          find "$XCF" -maxdepth 2 -type d
           SIM_DIR=$(dirname "$(find "$XCF" -type d -name WebRTC.framework -path '*simulator*' | head -1)")
           DEV_DIR=$(dirname "$(find "$XCF" -type d -name WebRTC.framework | grep -E '/ios-arm64/WebRTC.framework$' | head -1)")
+          if [ ! -d "$SIM_DIR/WebRTC.framework" ]; then echo "::error::slice simulateur introuvable"; exit 1; fi
+          if [ ! -d "$DEV_DIR/WebRTC.framework" ]; then echo "::error::slice device introuvable"; exit 1; fi
           echo "sim_dir=$SIM_DIR" >> "$GITHUB_OUTPUT"
           echo "dev_dir=$DEV_DIR" >> "$GITHUB_OUTPUT"
           echo "Simulateur: $SIM_DIR"
           echo "Device:     $DEV_DIR"
-          test -d "$SIM_DIR/WebRTC.framework"
-          test -d "$DEV_DIR/WebRTC.framework"
 
-      - name: Compile shared for iOS simulator (valide le cinterop WebRTC)
+      # UNE seule invocation Gradle : `assembleSharedReleaseXCFramework` compile deja les
+      # deux cibles et declenche le cinterop. Deux invocations separees invalidaient le cache
+      # de configuration entre elles (les -P changent) et relinkaient pour rien.
+      # Variante `Release` seule : `assembleSharedXCFramework` linkerait AUSSI le debug
+      # (~2x le temps Kotlin/Native) alors que project.yml ne consomme que XCFrameworks/release/.
+      # `--no-configuration-cache` : assurance le temps que SKIE soit valide en CI ; a retirer
+      # une fois le workflow vert (gain ~20 s).
+      - name: Assembler Shared.xcframework (SKIE inclus)
         run: |
-          ./gradlew :shared:compileKotlinIosSimulatorArm64 \
-            -Pwebrtc.framework.dir.iosSimulatorArm64="${{ steps.webrtc.outputs.sim_dir }}"
-
-      - name: Assemble Shared.xcframework (SKIE inclus)
-        run: |
-          ./gradlew :shared:assembleSharedXCFramework \
+          set -euo pipefail
+          ./gradlew :shared:assembleSharedReleaseXCFramework \
+            --no-configuration-cache --stacktrace \
             -Pwebrtc.framework.dir.iosArm64="${{ steps.webrtc.outputs.dev_dir }}" \
             -Pwebrtc.framework.dir.iosSimulatorArm64="${{ steps.webrtc.outputs.sim_dir }}"
 
-      - name: Install XcodeGen
+      - name: Verifier le XCFramework produit
+        run: |
+          set -euo pipefail
+          XCF=shared/build/XCFrameworks/release/Shared.xcframework
+          if [ ! -d "$XCF" ]; then echo "::error::$XCF absent"; exit 1; fi
+          find "$XCF" -maxdepth 2
+
+      - name: Installer XcodeGen
         run: brew install xcodegen
 
-      - name: Generate Xcode project
+      - name: Generer le projet Xcode
         working-directory: iosApp
         run: xcodegen generate
 
-      - name: Build iOS app (simulateur)
+      # `generic/platform=iOS Simulator` : compile sans booter de simulateur et sans dependre
+      # d'un nom de device ("iPhone 15" disparait d'une image d'Xcode a l'autre).
+      # Pas de `|| true` : un build casse DOIT faire rougir le run — un vert mensonger, c'est
+      # une facture macOS payee pour rien.
+      - name: Compiler l'app iOS (simulateur)
         working-directory: iosApp
         run: |
+          set -euo pipefail
           xcodebuild build \
             -project Bubble.xcodeproj \
             -scheme Bubble \
-            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
-            CODE_SIGNING_ALLOWED=NO | xcpretty || true
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      # Le log complet evite un second run macOS juste pour relire l'erreur.
+      - name: Publier les logs Xcode
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-xcode
+          path: |
+            ${{ runner.temp }}/xcodebuild.log
+            iosApp/Bubble.xcodeproj/project.pbxproj
+          if-no-files-found: ignore
+          retention-days: 7
