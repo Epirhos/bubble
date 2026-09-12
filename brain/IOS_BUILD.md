@@ -37,9 +37,16 @@ au link). Ni CocoaPods ni SPM. Le widget ne lie pas `Shared` — voir /brain/CI.
 > État au 12/09/2026, établi par les deux premiers runs macOS réels (`.github/workflows/ios.yml`).
 > **Compile et linke** : cinterop WebRTC, tout `iosMain`, le link Kotlin/Native du framework
 > statique, SKIE, l'assemblage du XCFramework, et sa consommation par Xcode 16.2.
-> **Pas encore prouvé** : le Swift de la cible `Bubble` (donc la consommation effective des
-> bindings SKIE) et l'édition de liens finale de l'app. Aucun comportement à l'exécution n'est
-> testé — rien n'a jamais tourné sur un simulateur.
+> **Le Swift de la cible `Bubble` compile aussi en arm64**, bindings SKIE inclus : le 3e run
+> n'a échoué que sur la variante **x86_64**, pour laquelle le XCFramework n'a pas de tranche
+> (voir /brain/CI.md, entrée `ARCHS=arm64`). Les `for await` sur les flux SKIE sont donc
+> corrects.
+> **Pas encore prouvé** : l'édition de liens finale et l'empaquetage de l'app. Aucun
+> comportement à l'exécution n'est testé — rien n'a jamais tourné sur un simulateur.
+>
+> Conséquence pratique : **le simulateur n'est supporté qu'en arm64** (Mac Apple Silicon).
+> Pour un Mac Intel, il faudrait ajouter la cible `iosX64()` dans `shared/build.gradle.kts`,
+> au prix d'un link Kotlin/Native supplémentaire à chaque build.
 - **`IosPeerLink`** (iosMain, `signal/IosPeerLink.kt`) : `PeerLink` en Kotlin/Native via **cinterop
   direct** vers WebRTC.framework (pas de pont Swift). Pilote `RTCPeerConnection`, implémente les
   delegates ObjC (`RTCPeerConnectionDelegateProtocol`/`RTCDataChannelDelegateProtocol`) en Kotlin,

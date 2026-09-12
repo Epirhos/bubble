@@ -216,6 +216,15 @@ jobs:
       # Le code de sortie reel de xcodebuild est propage tel quel (pas de `|| true`) : un
       # build casse DOIT faire rougir le run — un vert mensonger, c'est une facture payee
       # pour rien.
+      # ARCHS=arm64 est OBLIGATOIRE avec cette destination generique.
+      # shared/build.gradle.kts ne declare que iosArm64 + iosSimulatorArm64 : le
+      # Shared.xcframework n'a AUCUNE tranche x86_64. Or `generic/...` compile arm64 ET
+      # x86_64. En x86_64, `import Shared` fonctionne quand meme (l'entete ObjC generee est
+      # independante de l'archi), mais les conformances AsyncSequence de SKIE vivent dans un
+      # module SWIFT compile, lui arch-specifique : les types apparaissent sans leur
+      # conformance et chaque `for await` echoue sur "requires 'SkieKotlin...' to conform to
+      # 'AsyncSequence'". Symptome trompeur, cause triviale. Invisible pour un dev sur Mac
+      # Apple Silicon, ou Debug compile la seule archi active.
       - name: Compiler l'app iOS (simulateur)
         working-directory: iosApp
         run: |
@@ -226,6 +235,7 @@ jobs:
             -project Bubble.xcodeproj \
             -scheme Bubble \
             -destination 'generic/platform=iOS Simulator' \
+            ARCHS=arm64 \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             > "$LOG" 2>&1

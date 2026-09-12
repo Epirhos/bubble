@@ -115,6 +115,18 @@ La version WebRTC est **épinglée** (`WEBRTC_RELEASE` dans `ios.yml`). Pour en 
   validation du code iOS.
 - **CRLF sur `gradlew`** : `.gitattributes` force LF, sinon le runner macOS répond
   `bad interpreter: ^M`.
+- **`generic/platform=iOS Simulator` sans `ARCHS=arm64`** — le piège le plus trompeur
+  rencontré. `shared/build.gradle.kts` ne déclare que `iosArm64` + `iosSimulatorArm64` : le
+  `Shared.xcframework` n'a **aucune tranche x86_64**. Mais la destination générique compile
+  arm64 **et** x86_64. En x86_64, `import Shared` réussit quand même — l'entête ObjC générée
+  est indépendante de l'archi — alors que les conformances `AsyncSequence` de SKIE vivent dans
+  un module **Swift** compilé, lui arch-spécifique. Résultat : les types SKIE sont visibles
+  *sans* leur conformance, et chaque `for await` échoue sur
+  `requires 'SkieKotlinStateFlow<…>' to conform to 'AsyncSequence'`. On croit à un problème de
+  SKIE ou de bindings ; c'est une architecture manquante. Le tell est en fin de log :
+  `note: … is missing architecture(s) required by this target (x86_64)`, et **tous** les
+  `SwiftCompile` en échec portent `normal x86_64`. Un dev sur Mac Apple Silicon ne le voit
+  jamais (en Debug, Xcode ne compile que l'archi active).
 
 ## Mises à jour (Dependabot)
 
