@@ -135,6 +135,11 @@ SKIE est publié pour une version exacte de Kotlin, les séparer casse la compil
 Après un merge de `kotlin-toolchain`, lancer `ios.yml` à la main : c'est le seul groupe qui
 peut casser le cinterop et SKIE sans que le job Linux s'en aperçoive.
 
+## Faire tourner l'app sur un appareil
+
+La CI compile ; elle n'exécute rien. Pour éprouver Bubble sur un téléphone Android ou un iPhone,
+voir **/brain/TESTER.md** — deux clients sont toujours nécessaires (rooms strictes de 2).
+
 ## Modèles MediaPipe
 
 `androidApp/src/main/assets/*.task` (~11 Mo) sont hors git. `./scripts/fetch-models.sh` les

@@ -76,8 +76,17 @@ class AndroidGestureRecognizer(private val context: Context) : GestureRecognizer
                         .setNumFaces(1)
                         .build(),
                 )
-            } catch (e: Exception) {
-                Log.w(TAG, "Modèles MediaPipe indisponibles — vision désactivée", e)
+            } catch (e: Throwable) {
+                // Throwable et non Exception : quand l'ABI de l'appareil n'a pas de
+                // libmediapipe_tasks_vision_jni.so (cas des émulateurs x86_64), le chargement
+                // natif lève un UnsatisfiedLinkError, qui est un Error et non une Exception.
+                // Un catch (Exception) le laissait filer ; comme on est dans executor.execute,
+                // il remontait à l'UncaughtExceptionHandler et tuait l'application entière.
+                // La vision est une couche optionnelle : son absence doit dégrader Bubble,
+                // jamais l'arrêter — le pairage et le lien E2EE n'en dépendent pas.
+                Log.w(TAG, "Vision indisponible (modèles ou bibliothèque native) — désactivée", e)
+                handLandmarker = null
+                faceLandmarker = null
             }
         }
     }

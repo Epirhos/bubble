@@ -101,6 +101,10 @@ diagnostiquées.
 Cmd+R au simulateur, ou `xcodebuild -scheme Bubble -destination 'generic/platform=iOS Simulator'`
 (destination générique : ne dépend d'aucun nom de device, qui varie d'un Xcode à l'autre).
 
+Pour faire tourner l'app sur un **iPhone réel** — adresse du relai, permission de réseau local,
+et l'exception App Transport Security qui reste à poser — la procédure complète est dans
+**/brain/TESTER.md**.
+
 ## Résumé : ce qui reste vraiment
 Aucune logique métier. Uniquement : lancer la recette sur macOS + écrire `IosPeerLink`,
 `IosPairedIdentityStore`, et les vues SwiftUI des jeux (mécanique, guidée par les pendants Android).

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifeste de la variante DEBUG uniquement. Il est fusionné par AGP par-dessus le manifeste
+  principal quand on assemble `debug`, et n'apparaît jamais dans un build `release`.
+
+  Raison d'être : le relai de signalisation de développement (server/signaling-server.js)
+  écoute en ws:// non chiffré, sur 10.0.2.2 depuis l'émulateur ou sur l'IP LAN de la machine
+  depuis un téléphone. Or `usesCleartextTraffic` vaut false par défaut dès targetSdk 28, et
+  OkHttp consulte NetworkSecurityPolicy : la connexion échouerait sur
+  « CLEARTEXT communication to … not permitted by network security policy », sans que rien
+  n'apparaisse dans l'interface — seulement dans logcat.
+
+  Bubble est une application E2EE : cette tolérance doit rester strictement cantonnée au
+  debug. La release continue d'interdire tout trafic en clair, et le relai de production est
+  en wss:// (voir BubbleApplication.DEV_SIGNALING_URL).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>

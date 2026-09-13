@@ -28,8 +28,12 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_NSCameraUsageDescription: "Bubble utilise la caméra pour le Portail et les gestes."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Bubble utilise le micro pour la voix du Portail."
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        # iOS 14+ demande le consentement de l'utilisateur avant qu'une app puisse joindre une
+        # adresse du reseau local. Sans cette description, le systeme ne peut pas poser la
+        # question et la connexion au relai de developpement echoue. Necessaire pour tester
+        # sur un iPhone reel contre un serveur lance sur la machine de dev.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Bubble se connecte au relai de developpement sur votre reseau local."
         CODE_SIGN_ENTITLEMENTS: Bubble/Bubble.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: app.bubble.Bubble
 
