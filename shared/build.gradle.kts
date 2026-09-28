@@ -43,17 +43,17 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // api : Instant/StateFlow apparaissent dans l'API publique du module.
-            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-            api("org.jetbrains.kotlinx:kotlinx-datetime:0.6.2")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+            api("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
         }
         androidMain.dependencies {
             // WebRTC natif (repackage Google libwebrtc, org.webrtc.*) + WebSocket de signalisation.
-            implementation("io.getstream:stream-webrtc-android:1.1.3")
+            implementation("io.getstream:stream-webrtc-android:1.3.10")
             implementation("com.squareup.okhttp3:okhttp:4.12.0")
         }
     }

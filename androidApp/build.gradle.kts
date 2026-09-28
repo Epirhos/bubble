@@ -42,7 +42,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
 
@@ -56,13 +56,13 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
 
     // Cycle temporel : montage 21h + purge 23h30 en tâche de fond.
-    implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
 
     // Widget d'écran d'accueil (Portail Aura + snapshot flouté).
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
     // Cérémonie de pairage : génération QR (ZXing) + scan (ML Kit barcode sur CameraX).
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 }
